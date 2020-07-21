@@ -231,7 +231,7 @@
 
   - name: "copy {{ application_user }} user rtsp archive"
     copy:
-      src: "files/rtsp-simple-server_v0.6.0_linux_amd64.tar.gz"
+      src: "files/rtsp-simple-server_v0.9.4_linux_amd64.tar.gz"
       dest: "/home/{{ application_user }}/pkg"
       mode: '0664'
       owner: "{{ application_user }}"

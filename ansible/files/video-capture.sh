@@ -73,8 +73,8 @@ IPIF="ens3"
 IP_OUT=`ip addr show $IPIF | grep -Po 'inet \K[\d.]+'`
 PORT=8554
 
-# get the process of bomberman.exe
-PROCESS=`pidof bomberman.exe`
+# get the process of ipx-app
+PROCESS=`pidof ipx-app`
 
 set -x
 while true 
@@ -84,13 +84,13 @@ do
     start_video_capture 
     echo "sending x11 window to /dev/video0"
     sleep 1m
-    PROCESS=`pidof bomberman.exe`
+    PROCESS=`pidof ipx-app`
   elif [ -z "$PROCESS" ]
   then
     stop_video_capture
     echo "stopping capture of x11 video on $XID" 
     sleep 1m
-    PROCESS=`pidof bomberman.exe`
+    PROCESS=`pidof ipx-app`
   else
     break
   fi
