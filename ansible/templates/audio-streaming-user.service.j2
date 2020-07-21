@@ -1,0 +1,17 @@
+[Unit]
+Description={{ application_name }} user audio streaming service
+
+[Service]
+WorkingDirectory=/home/{{ application_user }}/rtsp
+EnvironmentFile=/home/{{ application_user }}/rtsp/{{ application_name }}-audio-streaming-user-opts
+ExecStart=/home/{{ application_user }}/bin/audio-streaming.sh $AUDIO_OPTS
+ExecStop=/bin/kill -2 $MAINPID
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=mixed
+Restart=on-failure
+RestartPreventExitStatus=255
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

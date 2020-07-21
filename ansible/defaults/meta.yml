@@ -1,0 +1,6 @@
+application_user: ubuntu
+application_user_pass: ubuntu
+application_name: "ipx-app"
+audio_stream_name: "ipx-app"
+video_stream_name: "bomberman"
+systemd_user_dir: "/home/{{ ansible_user }}/.config/systemd/user"

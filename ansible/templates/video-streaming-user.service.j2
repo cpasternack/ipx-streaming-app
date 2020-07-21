@@ -1,0 +1,17 @@
+[Unit]
+Description={{ application_name }} user video streaming service
+
+[Service]
+WorkingDirectory=/home/{{ application_user }}/rtsp
+EnvironmentFile=/home/{{ application_user }}/rtsp/{{ application_name }}-video-streaming-user-opts
+ExecStart=/home/{{ application_user }}/bin/video-streaming.sh $VIDEO_OPTS
+ExecStop=/bin/kill -2 $MAINPID
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=mixed
+Restart=on-failure
+RestartPreventExitStatus=255
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

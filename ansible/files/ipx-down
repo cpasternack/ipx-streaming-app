@@ -1,0 +1,11 @@
+#!/bin/sh
+# filename: ipx-up
+
+IPX_ADDRESS=`grep /etc/ipx.conf IPX_ADDRESS | cut -c 13-`
+IPX_IF=`grep /etc/ipx.conf IPX_DEVICE | cut -c 12-`
+
+if [ "$IFACE" == "$IPX_IF" ]
+then
+  ipx_interface del $IPX_IF 802.3
+  echo "$IPX_IF ipx down @ $IPX_ADDRESS" >> /var/log/ipx.log
+fi

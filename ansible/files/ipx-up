@@ -1,0 +1,13 @@
+#!/bin/sh
+# filename: ipx-up
+
+IPX_ADDRESS=`grep IPX_ADDRESS /ipx/ipx.conf | cut -c 13-`
+IPX_IF=`grep IPX_DEVICE /etc/ipx.conf | cut -c 12-`
+IPX_NET_ADDRESS=`grep IPX_NET_ADDRESS /etc/ipx.conf | cut -c 17-`
+
+if [ "$IFACE" == "$IPX_IF" ]
+then
+  ipx_interface add -p $IPX_IF 802.3 $IPX_ADDRESS
+  ipx_internal_net add $IPX_NET_ADDRESS 1
+  echo "$IPX_IF ipx up @ $IPX_ADDRESS" >> /var/log/ipx.log
+fi

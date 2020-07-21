@@ -1,0 +1,726 @@
+---
+# ubuntu 16.04.xx S install
+- hosts: ipxhosts
+  tasks:
+
+  - name: dpkg add architechture amd64
+    lineinfile: dest=/var/lib/dpkg/arch line="amd64" create=yes
+    become: yes
+
+  - name: dpkg add architechture i386
+    lineinfile: dest=/var/lib/dpkg/arch line="i386" create=yes
+    register: add_i386
+    become: yes
+
+  - name: update cache with i386
+    apt:
+      name: ['libc6:i386', 'libstdc++6:i386', 'zlib1g:i386']
+      update_cache: "{{ add_i386.changed }}"
+    become: yes
+    register: apt_i386_update
+
+  - name: Update and upgrade
+    apt:
+      upgrade: yes
+      update_cache: yes
+      cache_valid_time: 86400
+      force_apt_get: yes
+    become: yes
+    register: apt_update_upgrade
+
+  - name: Upgrade kernels
+    apt:
+      name:
+        - libdrm2
+        - linux-generic
+        - linux-headers-generic
+        - linux-image-generic
+        - open-vm-tools
+        - ubuntu-minimal
+      state: latest
+      force_apt_get: yes
+    become: yes
+    register: apt_linux_install
+
+  - name: Install required packages
+    apt:
+      update_cache: yes
+      force_apt_get: yes
+      install_recommends: yes
+      name:
+        - dbus-user-session # requirement for user services
+        - dkms
+        - ffmpeg
+        - gstreamer1.0-alsa
+        - gstreamer1.0-clutter-3.0
+        - gstreamer1.0-libav
+        - gstreamer1.0-plugins-bad
+        - gstreamer1.0-plugins-bad-videoparsers
+        - gstreamer1.0-plugins-base
+        - gstreamer1.0-plugins-base-apps
+        - gstreamer1.0-plugins-good
+        - gstreamer1.0-plugins-ugly
+        - gstreamer1.0-pulseaudio
+        - gstreamer1.0-tools
+        - gstreamer1.0-x
+        - libaacs0
+        - libjpeg8
+        - libjpeg-turbo8
+        - libmpeg2-4
+        - libopenjpeg5
+        - libx264-148
+        - libx265-79
+        - libxtst6:i386
+        - libxv1:i386
+        - lighttpd
+        - pulseaudio
+        - screen
+        - spice-vdagent
+        - unzip
+        - v4l-utils
+        - v4l2loopback-dkms
+        - v4l2loopback-source
+        - v4l2loopback-utils
+        - vim
+        - wine
+        - wmctrl
+        - x11-apps
+        - x11-common
+        - x11-session-utils
+        - x11-xkb-utils
+        - x11-xserver-utils
+        - x264
+      state: present
+    become: yes
+    register: apt_package_install
+
+  - name: clean up the apt cache
+    apt:
+      autoclean: true
+    become: yes
+    register: apt_clean
+
+  - name: remove unused from apt
+    apt:
+      autoremove: true
+    become: yes
+    register: apt_remove
+
+  - name: Check if a reboot is needed for Debian and Ubuntu boxes
+    register: reboot_required_file
+    stat: path=/var/run/reboot-required get_md5=no
+
+  - debug: var="{{ item }}"
+    loop:
+      - apt_i386_update.stdout
+      - apt_update_upgrade.stdout
+      - apt_linux_install.stdout
+      - apt_package_install.stdout
+      - apt_cache_clean.stdout
+      - apt_remove.stdout
+      - reboot_required_file.stdout
+
+  - name: Reboot the Debian or Ubuntu server
+    reboot:
+      msg: "Reboot initiated by Ansible due to kernel updates"
+      connect_timeout: 5
+      reboot_timeout: 300
+      pre_reboot_delay: 0
+      post_reboot_delay: 30
+      test_command: uptime
+    when: reboot_required_file.stat.exists
+    become: yes
+
+  - name: "make system directories for ipx"
+    file:
+      path: "{{ item }}"
+      state: directory
+      mode: '0775'
+      owner: root
+      group: root
+      recurse: yes
+    with_items:
+      - "/etc/network/scripts"
+      - "/home/{{ application_user }}/replay"
+    become: yes
+
+  - name: "copy ssh keys to {{ application_user }}/.ssh/authorized users"
+    copy:
+      src: "files/authorized_keys"
+      dest: "/home/{{ application_user }}/.ssh"
+      mode: '0644'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+      backup: yes
+    become: yes
+
+  - name: "make directories for user {{ application_user }}"
+    file:
+      path: "{{ item }}"
+      state: directory
+      mode: '0775'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+      recurse: yes
+    with_items:
+      - "/home/{{ application_user }}/bin"
+      - "/home/{{ application_user }}/ipx"
+      - "/home/{{ application_user }}/pkg"
+      - "/home/{{ application_user }}/replay"
+      - "/home/{{ application_user }}/rtsp"
+      - "/home/{{ application_user }}/vgl"
+      - "{{ systemd_user_dir }}"
+    become: yes
+    register: make_user_directories
+
+  - name: "add user {{ application_user }} to audio group"
+    user:
+      name: "{{ application_user }}"
+      append: yes
+      groups: audio
+    become: yes
+    register: add_user_audio
+
+  - name: "add user {{ application_user }} to video group"
+    user:
+      name: "{{ application_user }}"
+      append: yes
+      groups: video
+    become: yes
+    register: add_user_video
+
+  - debug: var="{{ item }}"
+    loop:
+      - make_user_directoroes.stdout
+      - add_user_audio.stdout
+      - add_user_video.stdout
+
+  - name: "copy packages to target machine {{ ansible_host }}"
+    command: echo
+
+  - name: "copy {{ application_user }} user {{ application_name }} archive"
+    copy:
+      src: "files/{{ application_name }}.tar.gz"
+      dest: "/home/{{ application_user }}/pkg"
+      mode: '0664'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+      backup: yes
+    become: yes
+    register: application_copy_archive
+
+  - name: "copy {{ application_user }} ipx archive"
+    copy:
+      src: "files/ipx.tar.gz"
+      dest: "/home/{{ application_user }}/pkg"
+      mode: '0664'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+    become: yes
+    register: ipx_copy_archive
+
+  - name: "copy {{ application_user }} vgl archive"
+    copy:
+      src: "files/vgl.tar.gz"
+      dest: "/home/{{ application_user }}/pkg"
+      mode: '0664'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+    become: yes
+    register: vgl_copy_archive
+
+  - name: "copy {{ application_user }} user rtsp archive"
+    copy:
+      src: "files/rtsp-simple-server_v0.6.0_linux_amd64.tar.gz"
+      dest: "/home/{{ application_user }}/pkg"
+      mode: '0664'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+    become: yes
+    register: rtsp_copy_archive
+
+  - name: "copy {{ application_user }} user streaming archive"
+    copy:
+      src: "files/streaming.tar.gz"
+      dest: "/home/{{ application_user }}/pkg"
+      mode: '0664'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+    become: yes
+    register: streaming_copy_archive
+
+  - name: "copy {{ application_user }} pulse configuration archive"
+    copy:
+      src: "files/pulse.tar.gz"
+      dest: "/home/{{ application_user }}/pkg"
+      mode: '0664'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+    become: yes
+    register: pulse_copy_archive
+
+  - debug: var="{{ item }}"
+    loop:
+      - application_copy_archive.stdout
+      - ipx_copy_archive.stdout
+      - vgl_copy_archive.stdout
+      - rtsp_copy_archive.stdout
+      - pulse_copy_archive.stdout
+
+  - name: "copy and apply service configuration"
+    command: echo
+
+  - name: "copy {{ application_user }} user {{ application_name }} audio streaming service"
+    template:
+      src: "templates/audio-streaming-user.service.j2"
+      dest: "{{ systemd_user_dir }}/{{ application_name }}-audio-streaming-user.service"
+      mode: '0664'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+      backup: yes
+    become: yes
+    register: audio_streaming_copy
+
+  - name: "copy {{ application_user }} user {{ application_name }} audio streaming service options"
+    template:
+      src: "templates/audio-streaming-user-opts.j2"
+      dest: "/home/{{ application_user }}/rtsp/{{ application_name }}-audio-streaming-user-opts"
+      mode: '0664'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+      backup: yes
+    become: yes
+    register: audio_streaming_opts_copy
+
+  - debug: var="{{ item }}"
+    loop:
+      - audio_streaming_copy.stdout
+      - audio_streaming_copy_opts.stdout
+
+  - name: "copy {{ application_user }} user {{ application_name }} video streaming service options"
+    template:
+      src: "templates/video-streaming-user-opts.j2"
+      dest: "/home/{{ application_user }}/rtsp/{{ application_name }}-video-streaming-user-opts"
+      mode: '0664'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+    become: yes
+    register: video_stream_copy
+
+  - name: "copy {{ application_user }} user {{ application_name }} video streaming service"
+    template:
+      src: "templates/video-streaming-user.service.j2"
+      dest: "{{ systemd_user_dir }}/{{ application_name }}-video-streaming-user.service"
+      mode: '0664'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+      backup: yes
+    become: yes
+    register: video_stream_opts_copy
+
+  - debug: var="{{ item }}"
+    loop:
+      - video_stream_copy.stdout
+      - video_stream_opts_copy.stdout
+
+  - name: "copy {{ application_user }} user {{ application_name }} video capture service"
+    template:
+      src: "templates/video-capture-user.service.j2"
+      dest: "{{ systemd_user_dir }}/{{ application_name }}-video-capture-user.service"
+      mode: '0664'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+      backup: yes
+    become: yes
+    register: video_capture_copy
+
+  - name: "copy {{ application_user }} user {{ application_name }} video capture service options"
+    template:
+      src: "templates/video-capture-user-opts.j2"
+      dest: "/home/{{ application_user }}/rtsp/{{ application_name }}-video-capture-user-opts"
+      mode: '0664'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+    become: yes
+    register: video_capture_opts_copy
+
+  - debug: var="{{ item }}"
+    loop:
+      - video_capture_copy.stdout
+      - video_capture_opts_copy.stdout
+
+  - name: "copy rtsp streaming service"
+    template:
+      src: "templates/rtsp-simple-server.service.j2"
+      dest: "/etc/systemd/system/rtsp-simple-server.service"
+      mode: '0644'
+      owner: root
+      group: root
+      backup: yes
+    become: yes
+    register: rtsp_copy
+
+  - name: "copy rtsp streaming service options to {{ application_user }} working directory"
+    template:
+      src: "templates/rtsp-simple-server-opts.j2"
+      dest: "/home/{{ application_user }}/rtsp/rtsp-simple-server-opts"
+      mode: '0664'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+    become: yes
+    register: rtsp_opts_copy
+
+  - debug: var="{{ item }}"
+    loop:
+      - rtsp_copy.stdout
+      - rtsp_opts_copy.stdout
+
+  - name: extact ipx archive
+    unarchive:
+      src: "/home/{{ application_user }}/pkg/ipx.tar.gz"
+      dest: "/home/{{ application_user }}/ipx"
+      mode: '0644'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+      list_files: yes
+      remote_src: yes
+    become: yes
+    register: ipx_extract
+
+  - name: extract rtsp service archive
+    unarchive:
+      src: "/home/{{ application_user }}/pkg/rtsp-simple-server_v0.6.0_linux_amd64.tar.gz"
+      dest: "/home/{{ application_user }}/bin"
+      mode: '0755'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+      list_files: yes
+      remote_src: yes
+    become: yes
+    register: rtsp_extract
+
+  - name: extract vgl archive
+    unarchive:
+      src: "/home/{{ application_user }}/pkg/vgl.tar.gz"
+      dest: "/home/{{ application_user }}/vgl"
+      mode: '0755'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+      list_files: yes
+      remote_src: yes
+    become: yes
+    register: vgl_extract
+
+  - name: "extract {{ application_name }} archive"
+    unarchive:
+      src: "/home/{{ application_user }}/pkg/{{ application_name }}.tar.gz"
+      dest: "/home/{{ application_user }}"
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+      list_files: yes
+      remote_src: yes
+    become: yes
+    register: application_extract
+
+  - name: extract av services script package
+    unarchive:
+      src: "/home/{{ application_user }}/pkg/streaming.tar.gz"
+      dest: "/home/{{ application_user }}/bin"
+      mode: '0755'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+      list_files: yes
+      remote_src: yes
+    become: yes
+    register: user_av_extract
+
+  - name: extract pulse configuration package
+    unarchive:
+      src: "/home/{{ application_user }}/pkg/pulse.tar.gz"
+      dest: "/home/{{ application_user }}/rtsp"
+      mode: '0664'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+      list_files: yes
+      remote_src: yes
+    become: yes
+
+  - debug: var="{{ item }}"
+    loop:
+      - ipx_extract.stdout
+      - rtsp_extract.stdout
+      - vgl_extract.stdout
+      - application_extract.stdout
+      - user_av_extract.stdout
+      - pulse_extract.stdout
+
+  - name: "create link for {{ application_name }} in {{ application_user }}/bin"
+    file:
+      src: "/home/{{ application_user }}/{{ application_name }}/{{ application_name }}.sh"
+      dest: "/home/{{ application_user }}/bin/{{ application_name }}.sh"
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+      state: link
+    become: yes
+    register: application_name_link
+    ignore_errors: "{{ ansible_check_mode }}"
+
+  - name: "move ipx interface generation script to /home/{{ application_user }}/bin"
+    copy:
+      src: "/home/{{ application_user }}/ipx/ipx_generate_config.sh"
+      dest: "/home/{{ application_user }}/bin"
+      mode: '0755'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+      remote_src: yes
+    become: yes
+    register: ipx_configuration_script_move
+    ignore_errors: "{{ ansible_check_mode }}"
+
+  - name: "move ipx package install script to /home/{{ application_user }}/bin"
+    copy:
+      src: "/home/{{ application_user }}/ipx/ipx_install.sh"
+      dest: "/home/{{ application_user }}/bin"
+      mode: '0755'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+      remote_src: yes
+    become: yes
+    register: ipx_install_script_move
+    ignore_errors: "{{ ansible_check_mode }}"
+
+  - name: execute ipx package installation script
+    command: "/home/{{ application_user }}/bin/ipx_install.sh"
+    environment:
+      - HOME: "/home/{{ application_user }}"
+    become: yes
+    register: ipx_install
+    ignore_errors: "{{ ansible_check_mode }}"
+
+
+  - name: execute ipx interface config generation script
+    command: "/home/{{ application_user }}/bin/ipx_generate_config.sh"
+    environment:
+      - HOME: "/home/{{ application_user }}"
+    become_user: "{{ application_user }}"
+    become: yes
+    register: ipx_config_generation
+    ignore_errors: "{{ ansible_check_mode }}"
+
+  - name: copy ipx interface config to /etc
+    copy:
+      src: "/home/{{ application_user }}/ipx/ipx.conf.gen"
+      dest: "/etc/ipx.conf"
+      mode: '0664'
+      owner: root
+      group: root
+      remote_src: yes
+      backup: no
+    become: yes
+    register: ipx_copy_config
+    ignore_errors: "{{ ansible_check_mode }}"
+
+  - name: copy ipx interface script to /etc/network/scripts
+    copy:
+      src: "/home/{{ application_user }}/ipx/{{ item }}"
+      dest: "/etc/network/scripts"
+      mode: '0755'
+      owner: root
+      group: root
+      remote_src: yes
+    with_items:
+      - ipx-up
+      - ipx-down
+    become: yes
+    register: ipx_copy_script
+    when: ansible_distribution == 'Ubuntu' and ansible_distribution_version == '16.04'
+    ignore_errors: "{{ ansible_check_mode }}"
+
+  - name: "create link for ipx scripts in /etc/network/if-{up,down}.d/"
+    file:
+      src: "/etc/network/scripts/{{ item.src }}"
+      dest: "/etc/network/{{ item.dest }}"
+      owner: root
+      group: root
+      state: link
+      force: yes
+    loop:
+      - { src: ipx-up, dest: "if-up.d/ipx-up" }
+      - { src: ipx-down, dest: "if-down.d/ipx-down" }
+    become: yes
+    register: ipx_link
+    when: ansible_distribution == 'Ubuntu' and ansible_distribution_version == '16.04'
+
+  - name: "reload ipx networkd interface"
+    command: echo
+    register: ipx_interface_reload
+
+  - debug: var="{{ item }}"
+    loop:
+      - application_link.stdout
+      - ipx_configuration_script_move.stdout
+      - ipx_install_script_move.stdout
+      - ipx_config_generation.stdout
+      - ipx_copy_config.stdout
+      - ipx_copy_script.stdout
+      - ipx_link.stdout
+      - ipx_install.stdout
+
+  - name: "move vgl install script to /home/{{ application_user }}/bin"
+    copy:
+      src: "/home/{{ application_user }}/vgl/vgl_install.sh"
+      dest: "/home/{{ application_user }}/bin"
+      mode: '0755'
+      owner: "{{ application_user }}"
+      group: "{{ application_user }}"
+      remote_src: yes
+    become: yes
+    register: vgl_script_copy
+    ignore_errors: "{{ ansible_check_mode }}"
+
+  - name: execute vgl install script
+    command: "/home/{{ application_user }}/bin/vgl_install.sh"
+    become: yes
+    environment:
+      - HOME: "/home/{{ application_user }}"
+    register: vgl_script_install
+    ignore_errors: "{{ ansible_check_mode }}"
+
+  - debug: var="{{ item }}"
+    loop:
+      - vgl_script_copy.stdout
+      - vgl_script_install.stdout
+
+  - name: "copy pulseaudio configuration to /etc/pulse"
+    copy:
+      src: "/home/{{ application_user }}/rtsp/{{ item }}"
+      dest: "/etc/pulse/{{ item }}"
+      owner: root
+      group: root
+      remote_src: yes
+    with_items:
+      - client.conf
+      - daemon.conf
+      - default.pa
+    become: yes
+    register: pulse_config_copy
+    ignore_errors: "{{ ansible_check_mode }}"
+
+  - debug: var="{{ item }}"
+    loop:
+      - pulse_config_copy.stdout
+
+  - name: "set linger for user {{ application_user }} as dependency for systemctl user serivces"
+    command: "loginctl enable-linger {{ application_user }}"
+    become: yes
+    register: loginctl_linger
+
+  - name: "enable system systemd rtsp simple server service"
+    systemd:
+      name: "rtsp-simple-server.service"
+      scope: system
+      enabled: yes
+      state: started
+    become: yes
+    register: rtsp_system_service
+
+  - name: "start dbus.service as {{ application_user }} as dependency for systemctl user services"
+    systemd:
+      name: "dbus.service"
+      scope: user
+      enabled: yes
+      state: started
+    become: yes
+    become_user: "{{ application_user }}"
+    environment:
+      - XDG_RUNTIME_DIR: "/run/user/1000"
+      - DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus"
+    register: dbus_user_service
+
+  - name: "reload systemctl daemon as {{ application_user }} as if configuration changed"
+    systemd:
+      daemon_reload: yes
+      scope: user
+    become: yes
+    become_user: "{{ application_user }}"
+    environment:
+      - XDG_RUNTIME_DIR: "/run/user/1000"
+    register: systemctl_daemon_reload
+
+  - debug: var="{{ item }}"
+    loop:
+      - loginctl_linger.stdout
+      - dbus_user_service.stdout
+      - systemctl_daemon_reload.stdout
+
+  - name: "enable {{ application_user }} systemd user audio streaming service for {{ application_stream }}"
+    systemd:
+      name: "{{ application_name }}-audio-streaming-user.service"
+      scope: user
+      enabled: yes
+      state: started 
+    become_user: "{{ application_user }}"
+    become: yes
+    environment:
+      - XDG_RUNTIME_DIR: "/run/user/1000"
+      - DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus"
+    register: audio_streaming_user_service
+
+  - name: "enable {{ application_user }} systemd user video streaming service for {{ application_stream }}"
+    systemd:
+      name: "{{ application_name }}-video-streaming-user.service"
+      scope: user
+      enabled: yes
+      state: stopped
+    become_user: "{{ application_user }}"
+    become: yes
+    environment:
+      - XDG_RUNTIME_DIR: "/run/user/1000"
+      - DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus"
+    register: video_streaming_user_service
+
+  - name: "enable {{ application_user }} systemd user video capture service for {{ application_stream }}"
+    systemd:
+      name: "{{ application_name }}-video-capture-user.service"
+      scope: user
+      enabled: no
+      state: stopped
+    become_user: "{{ application_user }}"
+    become: yes
+    environment:
+      - XDG_RUNTIME_DIR: "/run/user/1000"
+      - DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus"
+    register: video_capture_user_service
+
+
+  - name: disable services
+    systemd:
+      name: "{{ item }}"
+      scope: system
+      enabled: no
+      state: stopped
+    with_items:
+      #- avahi-daemon.service
+      - iscsid.service
+      - unattended-upgrades.service
+    become: yes
+    register: disabled_services
+
+  - debug: var="{{ item }}"
+    loop:
+      - audio_streaming_user_service.status
+      - video_streaming_user_service.status
+      - video_capture_user_service.status
+      - rtsp_system_service.status
+      - disabled_services.stdout
+
+  - name: restart lighttpd
+    systemd:
+      name: lighttpd
+      scope: system
+      enabled: yes
+      state: restarted
+    become: yes
+    register: httpd_restart
+
+  - debug: var=httpd_restart.stdout

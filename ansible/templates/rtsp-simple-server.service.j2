@@ -1,0 +1,15 @@
+[Unit]
+Description=RTSP simple streaming server by Alessandro Ros
+After=network.target
+
+[Service]
+EnvironmentFile=/home/{{ application_user }}/rtsp/rtsp-simple-server-opts
+ExecStart=/home/{{ application_user }}/bin/rtsp-simple-server $RTSP_OPTS
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+Restart=on-failure
+RestartPreventExitStatus=255
+Type=simple
+
+[Install]
+WantedBy=multi-user.target
